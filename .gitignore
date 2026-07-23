@@ -1,0 +1,9 @@
+backend/.env
+.venv/
+__pycache__/
+*.py[cod]
+.env
+backend/.env
+backend/nooros.db
+.pytest_cache/
+.mypy_cache/
