@@ -3,6 +3,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.core.config import settings
+from reportlab.pdfgen import canvas
 
 
 def register_user(client: TestClient) -> dict:
@@ -20,6 +21,15 @@ def register_user(client: TestClient) -> dict:
 
     return response.json()
 
+def create_text_pdf(
+    file_path: Path,
+    text: str,
+) -> bytes:
+    pdf = canvas.Canvas(str(file_path))
+    pdf.drawString(72, 720, text)
+    pdf.save()
+
+    return file_path.read_bytes()
 
 def test_upload_pdf_successfully(
     client: TestClient,
@@ -39,12 +49,9 @@ def test_upload_pdf_successfully(
     access_token = registration_data["access_token"]
     organization_id = registration_data["organization"]["id"]
 
-    pdf_content = (
-        b"%PDF-1.4\n"
-        b"1 0 obj\n"
-        b"<< /Type /Catalog >>\n"
-        b"endobj\n"
-        b"%%EOF"
+    pdf_content = create_text_pdf(
+        file_path=tmp_path / "research-paper.pdf",
+        text="NoorOS trustworthy knowledge system",
     )
 
     response = client.post(
@@ -72,13 +79,13 @@ def test_upload_pdf_successfully(
     assert response_data["title"] == "My Test Document"
     assert response_data["original_filename"] == "research-paper.pdf"
     assert response_data["content_type"] == "application/pdf"
-    assert response_data["status"] == "pending"
+    assert response_data["status"] == "ready"
 
     version = response_data["latest_version"]
 
     assert version["version_number"] == 1
     assert version["file_size"] == len(pdf_content)
-    assert version["extraction_status"] == "pending"
+    assert version["extraction_status"] == "completed"
     assert len(version["file_checksum"]) == 64
 
     stored_file = Path(version["storage_path"])

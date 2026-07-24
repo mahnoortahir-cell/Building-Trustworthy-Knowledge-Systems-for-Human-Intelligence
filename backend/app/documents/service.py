@@ -14,6 +14,10 @@ from app.documents.models import (
     DocumentVersion,
     ExtractionStatus,
 )
+from app.documents.extraction import (
+    DocumentExtractionError,
+    extract_pdf_text,
+)
 
 
 class InvalidDocumentError(Exception):
@@ -198,3 +202,53 @@ def delete_stored_file(storage_path: str) -> None:
     except OSError:
         # Cleanup failure should not hide the original application error.
         pass
+
+def process_document_extraction(
+    db: Session,
+    document: Document,
+    version: DocumentVersion,
+) -> None:
+    document.status = DocumentStatus.processing
+    version.extraction_status = ExtractionStatus.processing
+
+    try:
+        db.commit()
+
+        extraction_result = extract_pdf_text(
+            version.storage_path
+        )
+
+        version.extracted_text = extraction_result.text
+        version.extraction_status = ExtractionStatus.completed
+        version.processing_error = None
+        document.status = DocumentStatus.ready
+
+        db.commit()
+        db.refresh(document)
+        db.refresh(version)
+
+    except DocumentExtractionError as exc:
+        db.rollback()
+
+        document.status = DocumentStatus.failed
+        version.extraction_status = ExtractionStatus.failed
+        version.processing_error = str(exc)
+
+        db.commit()
+        db.refresh(document)
+        db.refresh(version)
+
+    except Exception:
+        db.rollback()
+
+        document.status = DocumentStatus.failed
+        version.extraction_status = ExtractionStatus.failed
+        version.processing_error = (
+            "An unexpected error occurred during document extraction."
+        )
+
+        db.commit()
+        db.refresh(document)
+        db.refresh(version)
+
+        raise    

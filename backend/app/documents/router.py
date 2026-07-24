@@ -15,6 +15,15 @@ from app.documents.service import (
 )
 from app.models.membership import Membership
 from app.organizations.dependencies import get_current_membership
+from app.documents.service import (
+    DocumentCreationError,
+    DocumentStorageError,
+    InvalidDocumentError,
+    create_document_records,
+    delete_stored_file,
+    process_document_extraction,
+    store_uploaded_file,
+)
 
 
 router = APIRouter(
@@ -55,6 +64,12 @@ async def upload_document(
             storage_path=storage_path,
             file_size=file_size,
             file_checksum=file_checksum,
+        )
+
+        process_document_extraction(
+            db=db,
+            document=document,
+            version=version,
         )
 
     except InvalidDocumentError as exc:
