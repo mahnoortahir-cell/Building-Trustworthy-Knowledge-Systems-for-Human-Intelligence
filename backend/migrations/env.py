@@ -7,8 +7,8 @@ from app.core.config import settings
 from app.core.database import Base
 
 # Import every model so it is registered in Base.metadata.
+from app.documents.models import Document, DocumentVersion  # noqa: F401
 from app.models import Membership, Organization, User  # noqa: F401
-
 
 config = context.config
 
