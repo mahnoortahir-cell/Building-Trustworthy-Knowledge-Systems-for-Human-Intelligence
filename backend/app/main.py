@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
-
+from app.auth.router import router as auth_router
 from fastapi import FastAPI
 
 from app.core.config import get_settings
@@ -23,7 +23,7 @@ app = FastAPI(
     debug=settings.debug,
     lifespan=lifespan,
 )
-
+app.include_router(auth_router)
 
 @app.get("/")
 def root() -> dict[str, str]:
