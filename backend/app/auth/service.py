@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth.schemas import RegisterRequest
-from app.auth.security import create_access_token, hash_password
+from app.auth.security import (create_access_token, hash_password, verify_password,)
 from app.models.membership import Membership, MembershipRole
 from app.models.organization import Organization
 from app.models.user import User
@@ -18,6 +18,13 @@ class EmailAlreadyRegisteredError(Exception):
 
 class RegistrationError(Exception):
     """Raised when registration cannot be completed."""
+
+class InvalidCredentialsError(Exception):
+    """Raised when the email or password is incorrect."""
+
+
+class InactiveUserError(Exception):
+    """Raised when an inactive user attempts to log in."""    
 
 
 def create_slug(value: str) -> str:
@@ -118,3 +125,33 @@ def register_user(
     access_token = create_access_token(subject=user.id)
 
     return user, organization, membership, access_token
+
+def authenticate_user(
+    db: Session,
+    email: str,
+    password: str,
+) -> tuple[User, str]:
+    normalized_email = email.strip().lower()
+
+    user = db.scalar(
+        select(User).where(User.email == normalized_email)
+    )
+
+    # Use the same error for an unknown email and a wrong password.
+    # This avoids revealing whether a particular account exists.
+    if user is None or not verify_password(
+        plain_password=password,
+        hashed_password=user.hashed_password,
+    ):
+        raise InvalidCredentialsError(
+            "Incorrect email or password."
+        )
+
+    if not user.is_active:
+        raise InactiveUserError(
+            "This account is inactive."
+        )
+
+    access_token = create_access_token(subject=user.id)
+
+    return user, access_token

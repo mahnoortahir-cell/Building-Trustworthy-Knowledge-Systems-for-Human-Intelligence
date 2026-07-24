@@ -46,3 +46,21 @@ class RegisterResponse(BaseModel):
     role: str
     user: UserResponse
     organization: OrganizationResponse
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+class CurrentOrganizationResponse(BaseModel):
+    id: str
+    name: str
+    slug: str
+    role: str
+
+
+class CurrentUserResponse(BaseModel):
+    id: str
+    full_name: str
+    email: EmailStr
+    is_active: bool
+    organizations: list[CurrentOrganizationResponse]
