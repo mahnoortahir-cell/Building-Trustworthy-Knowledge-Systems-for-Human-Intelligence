@@ -8,3 +8,4 @@ backend/nooros.db
 .pytest_cache/
 .mypy_cache/
 backend/*.db
+backend/storage/uploads/

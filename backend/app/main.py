@@ -4,6 +4,8 @@ from app.auth.router import router as auth_router
 from app.core.config import settings
 from app.organizations.router import router as organizations_router
 
+from app.documents.router import router as documents_router
+
 
 app = FastAPI(
     title=settings.app_name,
@@ -12,7 +14,7 @@ app = FastAPI(
 
 app.include_router(auth_router)
 app.include_router(organizations_router)
-
+app.include_router(documents_router)
 
 @app.get("/")
 def root() -> dict[str, str]:
