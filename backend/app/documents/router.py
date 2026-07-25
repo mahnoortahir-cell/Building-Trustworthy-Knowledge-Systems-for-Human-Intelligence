@@ -40,7 +40,22 @@ from app.documents.service import (
 )
 from app.models.membership import Membership
 from app.organizations.dependencies import get_current_membership
+from app.documents.llm_answer_generator import LLMAnswerGenerator
+from app.documents.llm_factory import (
+    UnsupportedLLMProviderError,
+    get_llm_provider,
+)
 
+from app.documents.rag_schemas import (
+    AnswerCitationResponse,
+    DocumentAnswerRequest,
+    DocumentAnswerResponse,
+)
+from app.documents.rag_service import (
+    RagGenerationError,
+    RagValidationError,
+    generate_document_answer,
+)
 
 router = APIRouter(
     prefix="/organizations/{organization_id}/documents",
@@ -191,5 +206,77 @@ def semantic_search(
                 score=result.score,
             )
             for result in results
+        ],
+    )
+
+@router.post(
+    "/answer",
+    response_model=DocumentAnswerResponse,
+    status_code=status.HTTP_200_OK,
+)
+def answer_document_question(
+    membership: Annotated[
+        Membership,
+        Depends(get_current_membership),
+    ],
+    db: Annotated[
+        Session,
+        Depends(get_db),
+    ],
+    payload: DocumentAnswerRequest,
+) -> DocumentAnswerResponse:
+    try:
+        result = generate_document_answer(
+            db,
+            question=payload.question,
+            organization_id=membership.organization_id,
+            embedding_provider=get_embedding_provider(),
+            search_store=DatabaseChunkSearchStore(),
+            answer_generator=LLMAnswerGenerator(
+                provider=get_llm_provider(),
+            ),
+            limit=payload.limit,
+            document_id=payload.document_id,
+            document_version_id=payload.document_version_id,
+        )
+
+    except RagValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    except UnsupportedLLMProviderError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+
+    except RagGenerationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+    return DocumentAnswerResponse(
+        answer=result.answer,
+        citations=[
+            AnswerCitationResponse(
+                chunk_id=citation.chunk_id,
+                document_id=citation.document_id,
+                document_version_id=(
+                    citation.document_version_id
+                ),
+                chunk_index=citation.chunk_index,
+                content=citation.content,
+                score=citation.score,
+            )
+            for citation in result.citations
         ],
     )
