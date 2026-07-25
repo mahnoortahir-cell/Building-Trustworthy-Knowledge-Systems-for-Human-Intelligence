@@ -4,6 +4,11 @@ from fastapi.testclient import TestClient
 
 from app.core.config import settings
 from reportlab.pdfgen import canvas
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+
+from app.documents.models import DocumentVersion
 
 
 def register_user(client: TestClient) -> dict:
@@ -33,6 +38,7 @@ def create_text_pdf(
 
 def test_upload_pdf_successfully(
     client: TestClient,
+    db_session: Session,
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -92,6 +98,89 @@ def test_upload_pdf_successfully(
 
     assert stored_file.exists()
     assert stored_file.read_bytes() == pdf_content
+
+    saved_version = db_session.scalar(
+        select(DocumentVersion).where(
+            DocumentVersion.id == version["id"]
+        )
+    )
+
+    assert saved_version is not None
+    assert saved_version.extraction_status.value == "completed"
+    assert saved_version.processing_error is None
+    assert saved_version.extracted_text is not None
+    assert "NoorOS trustworthy knowledge system" in saved_version.extracted_text    
+
+def test_upload_blank_pdf_marks_extraction_as_failed(
+    client: TestClient,
+    db_session: Session,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    test_upload_directory = tmp_path / "uploads"
+
+    monkeypatch.setattr(
+        settings,
+        "upload_directory",
+        str(test_upload_directory),
+    )
+
+    registration_data = register_user(client)
+
+    access_token = registration_data["access_token"]
+    organization_id = registration_data["organization"]["id"]
+
+    blank_pdf_path = tmp_path / "blank.pdf"
+
+    pdf = canvas.Canvas(str(blank_pdf_path))
+    pdf.showPage()
+    pdf.save()
+
+    blank_pdf_content = blank_pdf_path.read_bytes()
+
+    response = client.post(
+        f"/organizations/{organization_id}/documents",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+        },
+        data={
+            "title": "Blank Document",
+        },
+        files={
+            "file": (
+                "blank.pdf",
+                blank_pdf_content,
+                "application/pdf",
+            ),
+        },
+    )
+
+    assert response.status_code == 201
+
+    response_data = response.json()
+
+    assert response_data["status"] == "failed"
+
+    version = response_data["latest_version"]
+
+    assert version["extraction_status"] == "failed"
+
+    stored_file = Path(version["storage_path"])
+
+    assert stored_file.exists()
+    assert stored_file.read_bytes() == blank_pdf_content    
+
+    saved_version = db_session.scalar(
+        select(DocumentVersion).where(
+            DocumentVersion.id == version["id"]
+        )
+    )
+
+    assert saved_version is not None
+    assert saved_version.processing_error == (
+        "No extractable text was found in the PDF."
+    )
+    assert saved_version.extracted_text is None
 
 def test_reject_png_upload(
     client: TestClient,
