@@ -1,21 +1,34 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+    status,
+)
 from sqlalchemy.orm import Session
+
+from app.core.database import get_db
 from app.documents.embedding_service import DatabaseEmbeddingStore
 from app.documents.embeddings import get_embedding_provider
-from app.core.database import get_db
-from app.documents.schemas import DocumentResponse, DocumentVersionResponse
-from app.documents.service import (
-    DocumentCreationError,
-    DocumentStorageError,
-    InvalidDocumentError,
-    create_document_records,
-    delete_stored_file,
-    store_uploaded_file,
+from app.documents.retrieval import DatabaseChunkSearchStore
+from app.documents.retrieval_schemas import (
+    RetrievedChunkResponse,
+    SemanticSearchRequest,
+    SemanticSearchResponse,
 )
-from app.models.membership import Membership
-from app.organizations.dependencies import get_current_membership
+from app.documents.retrieval_service import (
+    RetrievalEmbeddingError,
+    RetrievalValidationError,
+    search_document_chunks,
+)
+from app.documents.schemas import (
+    DocumentResponse,
+    DocumentVersionResponse,
+)
 from app.documents.service import (
     DocumentCreationError,
     DocumentStorageError,
@@ -25,6 +38,8 @@ from app.documents.service import (
     process_document_extraction,
     store_uploaded_file,
 )
+from app.models.membership import Membership
+from app.organizations.dependencies import get_current_membership
 
 
 router = APIRouter(
@@ -121,4 +136,60 @@ async def upload_document(
             extraction_status=version.extraction_status.value,
             created_at=version.created_at,
         ),
+    )
+
+
+@router.post(
+    "/search",
+    response_model=SemanticSearchResponse,
+    status_code=status.HTTP_200_OK,
+)
+def semantic_search(
+    payload: SemanticSearchRequest,
+    membership: Annotated[
+        Membership,
+        Depends(get_current_membership),
+    ],
+    db: Annotated[
+        Session,
+        Depends(get_db),
+    ],
+) -> SemanticSearchResponse:
+    try:
+        results = search_document_chunks(
+            db,
+            query=payload.query,
+            organization_id=membership.organization_id,
+            provider=get_embedding_provider(),
+            store=DatabaseChunkSearchStore(),
+            limit=payload.limit,
+            document_id=payload.document_id,
+            document_version_id=payload.document_version_id,
+        )
+    except RetrievalValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    except RetrievalEmbeddingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+    return SemanticSearchResponse(
+        query=payload.query.strip(),
+        result_count=len(results),
+        results=[
+            RetrievedChunkResponse(
+                chunk_id=result.chunk_id,
+                document_id=result.document_id,
+                document_version_id=result.document_version_id,
+                chunk_index=result.chunk_index,
+                content=result.content,
+                score=result.score,
+            )
+            for result in results
+        ],
     )
