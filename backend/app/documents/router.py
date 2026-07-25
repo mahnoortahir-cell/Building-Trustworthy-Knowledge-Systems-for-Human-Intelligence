@@ -2,7 +2,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
-
+from app.documents.embedding_service import DatabaseEmbeddingStore
+from app.documents.embeddings import get_embedding_provider
 from app.core.database import get_db
 from app.documents.schemas import DocumentResponse, DocumentVersionResponse
 from app.documents.service import (
@@ -15,6 +16,15 @@ from app.documents.service import (
 )
 from app.models.membership import Membership
 from app.organizations.dependencies import get_current_membership
+from app.documents.service import (
+    DocumentCreationError,
+    DocumentStorageError,
+    InvalidDocumentError,
+    create_document_records,
+    delete_stored_file,
+    process_document_extraction,
+    store_uploaded_file,
+)
 
 
 router = APIRouter(
@@ -55,6 +65,14 @@ async def upload_document(
             storage_path=storage_path,
             file_size=file_size,
             file_checksum=file_checksum,
+        )
+
+        process_document_extraction(
+            db,
+            document,
+            version,
+            embedding_provider=get_embedding_provider(),
+            embedding_store=DatabaseEmbeddingStore(),
         )
 
     except InvalidDocumentError as exc:

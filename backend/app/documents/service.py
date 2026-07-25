@@ -3,18 +3,28 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import UploadFile
-
-from app.core.config import settings
+from sqlalchemy import delete
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
+from app.documents.chunking import chunk_text
+from app.documents.embedding_service import (
+    EmbeddingStore,
+    process_chunk_embeddings,
+)
+from app.documents.embeddings import EmbeddingProvider
+from app.documents.extraction import (
+    DocumentExtractionError,
+    extract_pdf_text,
+)
 from app.documents.models import (
     Document,
+    DocumentChunk,
     DocumentStatus,
     DocumentVersion,
     ExtractionStatus,
 )
-
 
 class InvalidDocumentError(Exception):
     """Raised when an uploaded document is invalid."""
@@ -198,3 +208,110 @@ def delete_stored_file(storage_path: str) -> None:
     except OSError:
         # Cleanup failure should not hide the original application error.
         pass
+
+def replace_document_chunks(
+    db: Session,
+    *,
+    document_version: DocumentVersion,
+    text: str,
+) -> list[DocumentChunk]:
+    """
+    Replace all chunks belonging to a document version.
+
+    This keeps reprocessing idempotent: running extraction again does not
+    create duplicate chunks.
+    """
+    db.execute(
+        delete(DocumentChunk).where(
+            DocumentChunk.document_version_id == document_version.id
+        )
+    )
+
+    chunk_strings = chunk_text(text)
+
+    chunks = [
+        DocumentChunk(
+            document_version=document_version,
+            chunk_index=index,
+            text=chunk,
+            character_count=len(chunk),
+        )
+        for index, chunk in enumerate(chunk_strings)
+    ]
+
+    db.add_all(chunks)
+
+    return chunks
+
+def process_document_extraction(
+    db: Session,
+    document: Document,
+    version: DocumentVersion,
+    *,
+    embedding_provider: EmbeddingProvider | None = None,
+    embedding_store: EmbeddingStore | None = None,
+) -> None:
+    if (embedding_provider is None) != (embedding_store is None):
+        raise ValueError(
+            "Embedding provider and embedding store must be supplied together."
+        )
+
+    document.status = DocumentStatus.processing
+    version.extraction_status = ExtractionStatus.processing
+
+    try:
+        db.commit()
+
+        extraction_result = extract_pdf_text(
+            version.storage_path
+        )
+
+        version.extracted_text = extraction_result.text
+
+        chunks = replace_document_chunks(
+            db,
+            document_version=version,
+            text=extraction_result.text,
+        )
+
+        if embedding_provider is not None and embedding_store is not None:
+            process_chunk_embeddings(
+                db,
+                chunks=chunks,
+                provider=embedding_provider,
+                store=embedding_store,
+            )
+
+        version.extraction_status = ExtractionStatus.completed
+        version.processing_error = None
+        document.status = DocumentStatus.ready
+
+        db.commit()
+        db.refresh(document)
+        db.refresh(version)
+
+    except DocumentExtractionError as exc:
+        db.rollback()
+
+        document.status = DocumentStatus.failed
+        version.extraction_status = ExtractionStatus.failed
+        version.processing_error = str(exc)
+
+        db.commit()
+        db.refresh(document)
+        db.refresh(version)
+
+    except Exception:
+        db.rollback()
+
+        document.status = DocumentStatus.failed
+        version.extraction_status = ExtractionStatus.failed
+        version.processing_error = (
+            "An unexpected error occurred during document extraction."
+        )
+
+        db.commit()
+        db.refresh(document)
+        db.refresh(version)
+
+        raise
