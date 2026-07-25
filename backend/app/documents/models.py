@@ -3,7 +3,7 @@ from __future__ import annotations
 import enum
 import uuid
 from datetime import datetime, timezone
-
+from pgvector.sqlalchemy import VECTOR
 from sqlalchemy import (
     BigInteger,
     DateTime,
@@ -15,9 +15,8 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-
+from sqlalchemy import DateTime, Enum, String, Text
 from app.core.database import Base
-
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
@@ -37,6 +36,11 @@ class ExtractionStatus(str, enum.Enum):
     completed = "completed"
     failed = "failed"
 
+class EmbeddingStatus(str, enum.Enum):
+    pending = "pending"
+    processing = "processing"
+    completed = "completed"
+    failed = "failed"
 
 class Document(Base):
     __tablename__ = "documents"
@@ -175,4 +179,75 @@ class DocumentVersion(Base):
 
     document: Mapped["Document"] = relationship(
         back_populates="versions",
+    )
+
+    chunks: Mapped[list["DocumentChunk"]] = relationship(
+        back_populates="document_version",
+        cascade="all, delete-orphan",
+        order_by="DocumentChunk.chunk_index",
+    )
+
+class DocumentChunk(Base):
+    __tablename__ = "document_chunks"
+
+    id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+
+    document_version_id: Mapped[str] = mapped_column(
+        ForeignKey("document_versions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    chunk_index: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+    )
+
+    text: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    character_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+
+    document_version: Mapped["DocumentVersion"] = relationship(
+        back_populates="chunks",
+    )    
+
+    embedding_status: Mapped[EmbeddingStatus] = mapped_column(
+        Enum(EmbeddingStatus),
+        nullable=False,
+        default=EmbeddingStatus.pending,
+    )
+
+    embedding_model: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    embedding_error: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    embedded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )    
+    embedding: Mapped[list[float] | None] = mapped_column(
+        VECTOR(8),
+        nullable=True,
     )

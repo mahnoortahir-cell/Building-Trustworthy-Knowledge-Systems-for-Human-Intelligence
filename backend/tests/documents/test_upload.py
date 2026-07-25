@@ -7,8 +7,8 @@ from reportlab.pdfgen import canvas
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-
-from app.documents.models import DocumentVersion
+from app.documents.service import process_document_extraction
+from app.documents.models import Document, DocumentChunk, DocumentVersion
 
 
 def register_user(client: TestClient) -> dict:
@@ -109,7 +109,130 @@ def test_upload_pdf_successfully(
     assert saved_version.extraction_status.value == "completed"
     assert saved_version.processing_error is None
     assert saved_version.extracted_text is not None
-    assert "NoorOS trustworthy knowledge system" in saved_version.extracted_text    
+    assert "NoorOS trustworthy knowledge system" in saved_version.extracted_text   
+
+    saved_chunks = db_session.scalars(
+        select(DocumentChunk)
+        .where(
+            DocumentChunk.document_version_id == saved_version.id
+        )
+        .order_by(DocumentChunk.chunk_index)
+    ).all()
+
+    assert len(saved_chunks) >= 1
+
+    assert [chunk.chunk_index for chunk in saved_chunks] == list(
+        range(len(saved_chunks))
+    )
+
+    assert all(chunk.text for chunk in saved_chunks)
+
+    assert all(
+        chunk.character_count == len(chunk.text)
+        for chunk in saved_chunks
+    )
+
+    assert saved_chunks[0].text in saved_version.extracted_text     
+
+def test_reprocessing_document_replaces_existing_chunks(
+    client: TestClient,
+    db_session: Session,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    test_upload_directory = tmp_path / "uploads"
+
+    monkeypatch.setattr(
+        settings,
+        "upload_directory",
+        str(test_upload_directory),
+    )
+
+    registration_data = register_user(client)
+
+    access_token = registration_data["access_token"]
+    organization_id = registration_data["organization"]["id"]
+
+    pdf_content = create_text_pdf(
+        file_path=tmp_path / "reprocess.pdf",
+        text="Original extracted document text",
+    )
+
+    response = client.post(
+        f"/organizations/{organization_id}/documents",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+        },
+        data={
+            "title": "Reprocessing Test",
+        },
+        files={
+            "file": (
+                "reprocess.pdf",
+                pdf_content,
+                "application/pdf",
+            ),
+        },
+    )
+
+    assert response.status_code == 201
+
+    response_data = response.json()
+    version_data = response_data["latest_version"]
+
+    saved_version = db_session.scalar(
+        select(DocumentVersion).where(
+            DocumentVersion.id == version_data["id"]
+        )
+    )
+
+    assert saved_version is not None
+
+    saved_document = db_session.scalar(
+        select(Document).where(
+            Document.id == saved_version.document_id
+        )
+    )
+
+    assert saved_document is not None
+
+    existing_chunks = db_session.scalars(
+        select(DocumentChunk).where(
+            DocumentChunk.document_version_id == saved_version.id
+        )
+    ).all()
+
+    assert len(existing_chunks) >= 1
+
+    old_chunk_ids = {
+        chunk.id
+        for chunk in existing_chunks
+    }
+
+    process_document_extraction(
+        db=db_session,
+        document=saved_document,
+        version=saved_version,
+    )
+
+    refreshed_chunks = db_session.scalars(
+        select(DocumentChunk)
+        .where(
+            DocumentChunk.document_version_id == saved_version.id
+        )
+        .order_by(DocumentChunk.chunk_index)
+    ).all()
+
+    assert len(refreshed_chunks) >= 1
+
+    assert [chunk.chunk_index for chunk in refreshed_chunks] == list(
+        range(len(refreshed_chunks))
+    )
+
+    assert not old_chunk_ids.intersection(
+        chunk.id
+        for chunk in refreshed_chunks
+    )
 
 def test_upload_blank_pdf_marks_extraction_as_failed(
     client: TestClient,

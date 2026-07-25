@@ -10,7 +10,11 @@ from app.core.database import Base, get_db
 from app.main import app
 
 # Ensure all SQLAlchemy models are registered with Base.metadata.
-from app.documents.models import Document, DocumentVersion  # noqa: F401
+from app.documents.models import (
+    Document,
+    DocumentChunk,
+    DocumentVersion,
+)
 from app.models import Membership, Organization, User  # noqa: F401
 
 

@@ -1,0 +1,29 @@
+services:
+  database:
+    image: pgvector/pgvector:0.8.5-pg17-trixie
+    container_name: nooros-postgres
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: nooros
+      POSTGRES_USER: nooros
+      POSTGRES_PASSWORD: nooros_dev_password
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - nooros_postgres_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U nooros -d nooros",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  nooros_postgres_data:

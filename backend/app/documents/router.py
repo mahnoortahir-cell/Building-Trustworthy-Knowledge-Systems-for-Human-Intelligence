@@ -2,7 +2,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
-
+from app.documents.embedding_service import DatabaseEmbeddingStore
+from app.documents.embeddings import get_embedding_provider
 from app.core.database import get_db
 from app.documents.schemas import DocumentResponse, DocumentVersionResponse
 from app.documents.service import (
@@ -67,9 +68,11 @@ async def upload_document(
         )
 
         process_document_extraction(
-            db=db,
-            document=document,
-            version=version,
+            db,
+            document,
+            version,
+            embedding_provider=get_embedding_provider(),
+            embedding_store=DatabaseEmbeddingStore(),
         )
 
     except InvalidDocumentError as exc:
