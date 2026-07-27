@@ -1,4 +1,4 @@
-﻿from collections.abc import Sequence
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -26,6 +26,10 @@ class ConversationValidationError(ValueError):
 
 class ConversationPersistenceError(RuntimeError):
     """Raised when conversation data cannot be stored."""
+
+
+class ConversationConflictError(RuntimeError):
+    """Raised when a conversation lifecycle action is not allowed."""
 
 
 def _utc_now() -> datetime:
@@ -153,6 +157,7 @@ def get_document_conversation(
     organization_id: str,
     conversation_id: str,
     include_messages: bool = False,
+    include_deleted: bool = False,
 ) -> DocumentConversation:
     statement = select(DocumentConversation).where(
         DocumentConversation.id == conversation_id,
@@ -162,6 +167,11 @@ def get_document_conversation(
     if include_messages:
         statement = statement.options(
             selectinload(DocumentConversation.messages)
+        )
+
+    if not include_deleted:
+        statement = statement.where(
+            DocumentConversation.is_deleted.is_(False)
         )
 
     conversation = db.scalar(statement)
@@ -339,6 +349,7 @@ def list_document_conversations(
     limit: int = 50,
     offset: int = 0,
     archived: str = "false",
+    deleted: str = "false",
 ) -> list[DocumentConversation]:
     """
     Return organisation-scoped conversations with archive filtering.
@@ -365,6 +376,14 @@ def list_document_conversations(
 
     archive_filter = archived.strip().lower()
 
+
+    deleted_filter = deleted.strip().lower()
+
+    if deleted_filter not in {"false", "true", "all"}:
+        raise ConversationValidationError(
+            "Deleted filter must be false, true, or all."
+        )
+
     if archive_filter not in {"false", "true", "all"}:
         raise ConversationValidationError(
             "Archived filter must be false, true, or all."
@@ -373,6 +392,18 @@ def list_document_conversations(
     statement = select(DocumentConversation).where(
         DocumentConversation.organization_id == organization_id
     )
+
+
+    if deleted_filter == "false":
+        statement = statement.where(
+            DocumentConversation.is_deleted.is_(False)
+        )
+    elif deleted_filter == "true":
+        statement = statement.where(
+            DocumentConversation.is_deleted.is_(True)
+        ).order_by(
+            DocumentConversation.deleted_at.desc()
+        )
 
     if archive_filter == "false":
         statement = statement.where(
@@ -626,11 +657,109 @@ def delete_document_conversation(
     organization_id: str,
     conversation_id: str,
 ) -> None:
+    """
+    Soft-delete an organisation-scoped conversation.
+
+    Repeated delete operations are idempotent and preserve the original
+    deleted timestamp. Pin and archive metadata are intentionally preserved
+    so restoring the conversation returns it to its previous lifecycle state.
+    """
+
     conversation = get_document_conversation(
         db,
         organization_id=organization_id,
         conversation_id=conversation_id,
+        include_deleted=True,
     )
+
+    if conversation.is_deleted:
+        return
+
+    try:
+        now = _utc_now()
+
+        conversation.is_deleted = True
+        conversation.deleted_at = now
+        conversation.updated_at = now
+
+        db.add(conversation)
+        db.commit()
+
+    except SQLAlchemyError as exc:
+        db.rollback()
+
+        raise ConversationPersistenceError(
+            "Unable to move the conversation to trash."
+        ) from exc
+
+
+def restore_document_conversation(
+    db: Session,
+    *,
+    organization_id: str,
+    conversation_id: str,
+) -> DocumentConversation:
+    """
+    Restore an organisation-scoped conversation from trash.
+
+    Repeated restore operations are idempotent.
+    """
+
+    conversation = get_document_conversation(
+        db,
+        organization_id=organization_id,
+        conversation_id=conversation_id,
+        include_deleted=True,
+    )
+
+    if not conversation.is_deleted:
+        return conversation
+
+    try:
+        now = _utc_now()
+
+        conversation.is_deleted = False
+        conversation.deleted_at = None
+        conversation.updated_at = now
+
+        db.add(conversation)
+        db.commit()
+        db.refresh(conversation)
+
+    except SQLAlchemyError as exc:
+        db.rollback()
+
+        raise ConversationPersistenceError(
+            "Unable to restore the conversation."
+        ) from exc
+
+    return conversation
+
+
+def permanently_delete_document_conversation(
+    db: Session,
+    *,
+    organization_id: str,
+    conversation_id: str,
+) -> None:
+    """
+    Permanently remove a conversation that is already in trash.
+
+    Conversation messages are deleted through the configured ORM and
+    database cascade rules.
+    """
+
+    conversation = get_document_conversation(
+        db,
+        organization_id=organization_id,
+        conversation_id=conversation_id,
+        include_deleted=True,
+    )
+
+    if not conversation.is_deleted:
+        raise ConversationConflictError(
+            "Conversation must be moved to trash before permanent deletion."
+        )
 
     try:
         db.delete(conversation)
@@ -640,5 +769,5 @@ def delete_document_conversation(
         db.rollback()
 
         raise ConversationPersistenceError(
-            "Unable to delete the conversation."
+            "Unable to permanently delete the conversation."
         ) from exc
