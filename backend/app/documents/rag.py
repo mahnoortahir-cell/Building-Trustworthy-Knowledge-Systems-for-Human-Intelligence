@@ -1,11 +1,19 @@
+﻿from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from typing import Protocol, Sequence
+from typing import Protocol, runtime_checkable
 
+from app.documents.conversation_types import (
+    ConversationHistoryMessage,
+)
 from app.documents.retrieval import RetrievedChunk
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class AnswerCitation:
+    """
+    Structured evidence used to generate a document answer.
+    """
+
     chunk_id: str
     document_id: str
     document_version_id: str
@@ -14,20 +22,66 @@ class AnswerCitation:
     score: float
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class GeneratedAnswer:
+    """
+    Final complete answer produced by the RAG service.
+    """
+
     answer: str
     citations: list[AnswerCitation]
 
 
+@dataclass(frozen=True, slots=True)
+class StreamingGeneratedAnswer:
+    """
+    Streaming answer returned by the RAG service.
+
+    answer_chunks is consumed lazily by the API layer. Citations are available
+    before answer generation starts because retrieval completes first.
+    """
+
+    answer_chunks: Iterator[str]
+    citations: list[AnswerCitation]
+
+
+@runtime_checkable
 class AnswerGenerator(Protocol):
-    model_name: str
+    """
+    Contract implemented by complete-response answer generators.
+    """
 
     def generate_answer(
         self,
         *,
         question: str,
         context_chunks: Sequence[RetrievedChunk],
+        conversation_history: Sequence[
+            ConversationHistoryMessage
+        ] = (),
     ) -> str:
-        """Generate an answer grounded only in the supplied chunks."""
+        """
+        Generate a complete grounded answer.
+        """
+        ...
+
+
+@runtime_checkable
+class StreamingAnswerGenerator(Protocol):
+    """
+    Contract implemented by streaming answer generators.
+    """
+
+    def stream_answer(
+        self,
+        *,
+        question: str,
+        context_chunks: Sequence[RetrievedChunk],
+        conversation_history: Sequence[
+            ConversationHistoryMessage
+        ] = (),
+    ) -> Iterator[str]:
+        """
+        Yield grounded answer text chunks.
+        """
         ...

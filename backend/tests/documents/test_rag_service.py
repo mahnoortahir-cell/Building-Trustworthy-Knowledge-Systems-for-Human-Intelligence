@@ -6,6 +6,11 @@ from app.documents.rag_service import (
     RagValidationError,
     generate_document_answer,
 )
+from collections.abc import Sequence
+
+from app.documents.conversation_types import (
+    ConversationHistoryMessage,
+)
 
 
 class FakeEmbeddingProvider:
@@ -41,22 +46,32 @@ class FakeChunkSearchStore:
         return self.results
 
 
+
+
 class FakeAnswerGenerator:
     model_name = "fake-answer-model"
 
     def __init__(self, answer: str = "Generated answer") -> None:
         self.answer = answer
-        self.received_question = None
+        self.received_question: str | None = None
         self.received_chunks = None
+        self.received_history: list[
+            ConversationHistoryMessage
+        ] = []
 
     def generate_answer(
         self,
         *,
         question: str,
         context_chunks,
+        conversation_history: Sequence[
+            ConversationHistoryMessage
+        ] = (),
     ) -> str:
         self.received_question = question
         self.received_chunks = list(context_chunks)
+        self.received_history = list(conversation_history)
+
         return self.answer
 
 
