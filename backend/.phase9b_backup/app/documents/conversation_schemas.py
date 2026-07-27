@@ -40,8 +40,6 @@ class ConversationResponse(BaseModel):
     organization_id: str
     created_by_user_id: str
     title: str | None
-    is_pinned: bool
-    pinned_at: datetime | None
     created_at: datetime
     updated_at: datetime
 

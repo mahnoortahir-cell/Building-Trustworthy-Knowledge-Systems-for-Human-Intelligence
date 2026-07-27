@@ -101,8 +101,6 @@ from app.documents.conversation_service import (
     list_conversation_messages,
     list_document_conversations,
     update_document_conversation,
-    pin_document_conversation,
-    unpin_document_conversation,
 )
 
 router = APIRouter(
@@ -686,8 +684,6 @@ def get_conversation(
         organization_id=conversation.organization_id,
         created_by_user_id=conversation.created_by_user_id,
         title=conversation.title,
-        is_pinned=conversation.is_pinned,
-        pinned_at=conversation.pinned_at,
         created_at=conversation.created_at,
         updated_at=conversation.updated_at,
         messages=[
@@ -695,7 +691,6 @@ def get_conversation(
             for message in messages
         ],
     )
-
 
 @router.patch(
     "/conversations/{conversation_id}",
@@ -740,52 +735,6 @@ def update_conversation(
             detail=str(exc),
         ) from exc
 
-    return ConversationResponse.model_validate(conversation)
-
-
-@router.post(
-    "/conversations/{conversation_id}/pin",
-    response_model=ConversationResponse,
-    status_code=status.HTTP_200_OK,
-)
-def pin_conversation(
-    conversation_id: str,
-    membership: Annotated[Membership, Depends(get_current_membership)],
-    db: Annotated[Session, Depends(get_db)],
-) -> ConversationResponse:
-    try:
-        conversation = pin_document_conversation(
-            db,
-            organization_id=membership.organization_id,
-            conversation_id=conversation_id,
-        )
-    except ConversationNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ConversationPersistenceError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    return ConversationResponse.model_validate(conversation)
-
-
-@router.delete(
-    "/conversations/{conversation_id}/pin",
-    response_model=ConversationResponse,
-    status_code=status.HTTP_200_OK,
-)
-def unpin_conversation(
-    conversation_id: str,
-    membership: Annotated[Membership, Depends(get_current_membership)],
-    db: Annotated[Session, Depends(get_db)],
-) -> ConversationResponse:
-    try:
-        conversation = unpin_document_conversation(
-            db,
-            organization_id=membership.organization_id,
-            conversation_id=conversation_id,
-        )
-    except ConversationNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ConversationPersistenceError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
     return ConversationResponse.model_validate(conversation)
 
 

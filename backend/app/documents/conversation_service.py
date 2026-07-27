@@ -364,6 +364,8 @@ def list_document_conversations(
             DocumentConversation.organization_id == organization_id
         )
         .order_by(
+            DocumentConversation.is_pinned.desc(),
+            DocumentConversation.pinned_at.desc(),
             DocumentConversation.updated_at.desc(),
             DocumentConversation.created_at.desc(),
             DocumentConversation.id.desc(),
@@ -412,6 +414,91 @@ def update_document_conversation(
         ) from exc
 
     return conversation
+
+def pin_document_conversation(
+    db: Session,
+    *,
+    organization_id: str,
+    conversation_id: str,
+) -> DocumentConversation:
+    """
+    Pin a conversation belonging to one organisation.
+
+    Repeated pin operations are idempotent. An already pinned
+    conversation retains its original pinned timestamp.
+    """
+
+    conversation = get_document_conversation(
+        db,
+        organization_id=organization_id,
+        conversation_id=conversation_id,
+    )
+
+    if conversation.is_pinned:
+        return conversation
+
+    try:
+        now = _utc_now()
+
+        conversation.is_pinned = True
+        conversation.pinned_at = now
+        conversation.updated_at = now
+
+        db.add(conversation)
+        db.commit()
+        db.refresh(conversation)
+
+    except SQLAlchemyError as exc:
+        db.rollback()
+
+        raise ConversationPersistenceError(
+            "Unable to pin the conversation."
+        ) from exc
+
+    return conversation
+
+
+def unpin_document_conversation(
+    db: Session,
+    *,
+    organization_id: str,
+    conversation_id: str,
+) -> DocumentConversation:
+    """
+    Unpin a conversation belonging to one organisation.
+
+    Repeated unpin operations are idempotent.
+    """
+
+    conversation = get_document_conversation(
+        db,
+        organization_id=organization_id,
+        conversation_id=conversation_id,
+    )
+
+    if not conversation.is_pinned:
+        return conversation
+
+    try:
+        now = _utc_now()
+
+        conversation.is_pinned = False
+        conversation.pinned_at = None
+        conversation.updated_at = now
+
+        db.add(conversation)
+        db.commit()
+        db.refresh(conversation)
+
+    except SQLAlchemyError as exc:
+        db.rollback()
+
+        raise ConversationPersistenceError(
+            "Unable to unpin the conversation."
+        ) from exc
+
+    return conversation
+
 
 def delete_document_conversation(
     db: Session,

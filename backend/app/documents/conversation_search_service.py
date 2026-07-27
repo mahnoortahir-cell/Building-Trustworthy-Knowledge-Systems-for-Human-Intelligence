@@ -138,6 +138,8 @@ def search_document_conversations(
             search_condition,
         )
         .order_by(
+            DocumentConversation.is_pinned.desc(),
+            DocumentConversation.pinned_at.desc(),
             DocumentConversation.updated_at.desc(),
             DocumentConversation.created_at.desc(),
             DocumentConversation.id.desc(),

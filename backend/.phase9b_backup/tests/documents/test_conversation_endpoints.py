@@ -58,11 +58,6 @@ def conversation_url(
     )
 
 
-def conversation_pin_url(organization_id: str, conversation_id: str) -> str:
-    return (f"/organizations/{organization_id}"
-            f"/documents/conversations/{conversation_id}/pin")
-
-
 def create_conversation(
     client: TestClient,
     *,
@@ -615,36 +610,3 @@ def test_list_conversations_rejects_invalid_pagination(
     assert zero_limit_response.status_code == 422
     assert excessive_limit_response.status_code == 422
     assert negative_offset_response.status_code == 422
-
-def test_pin_conversation_sets_pin_metadata(client: TestClient) -> None:
-    registration = register_user(client)
-    conversation = create_conversation(client, organization_id=registration["organization_id"], access_token=registration["access_token"])
-    response = client.post(conversation_pin_url(registration["organization_id"], conversation["id"]), headers=authorization_headers(registration["access_token"]))
-    assert response.status_code == 200
-    assert response.json()["is_pinned"] is True
-    assert response.json()["pinned_at"] is not None
-
-
-def test_unpin_conversation_clears_pin_metadata(client: TestClient) -> None:
-    registration = register_user(client)
-    conversation = create_conversation(client, organization_id=registration["organization_id"], access_token=registration["access_token"])
-    url = conversation_pin_url(registration["organization_id"], conversation["id"])
-    headers = authorization_headers(registration["access_token"])
-    assert client.post(url, headers=headers).status_code == 200
-    response = client.delete(url, headers=headers)
-    assert response.status_code == 200
-    assert response.json()["is_pinned"] is False
-    assert response.json()["pinned_at"] is None
-
-
-def test_pinned_conversation_appears_first(client: TestClient) -> None:
-    registration = register_user(client)
-    pinned = create_conversation(client, organization_id=registration["organization_id"], access_token=registration["access_token"], title="Pinned")
-    headers = authorization_headers(registration["access_token"])
-    assert client.post(conversation_pin_url(registration["organization_id"], pinned["id"]), headers=headers).status_code == 200
-    unpinned = create_conversation(client, organization_id=registration["organization_id"], access_token=registration["access_token"], title="Unpinned")
-    response = client.get(conversations_url(registration["organization_id"]), headers=headers)
-    assert response.status_code == 200
-    items = response.json()["conversations"]
-    assert items[0]["id"] == pinned["id"]
-    assert items[1]["id"] == unpinned["id"]
