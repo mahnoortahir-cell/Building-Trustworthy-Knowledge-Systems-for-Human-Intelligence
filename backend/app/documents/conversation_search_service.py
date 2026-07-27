@@ -60,7 +60,6 @@ def validate_conversation_search_pagination(
             "Conversation search offset must not be negative."
         )
 
-
 def search_document_conversations(
     db: Session,
     *,
@@ -69,24 +68,28 @@ def search_document_conversations(
     limit: int = DEFAULT_SEARCH_LIMIT,
     offset: int = 0,
     include_message_content: bool = False,
+    archived: str = "false",
 ) -> list[DocumentConversation]:
     """
     Search conversations belonging to one organisation.
 
-    By default, only conversation titles are searched. Message-content
-    search can be enabled explicitly.
-
-    Results are ordered by most recently updated conversation first.
+    Archived conversations are excluded by default. The archived parameter
+    accepts false, true, or all.
     """
 
-    normalized_query = normalize_conversation_search_query(
-        query
-    )
+    normalized_query = normalize_conversation_search_query(query)
 
     validate_conversation_search_pagination(
         limit=limit,
         offset=offset,
     )
+
+    archive_filter = archived.strip().lower()
+
+    if archive_filter not in {"false", "true", "all"}:
+        raise ConversationValidationError(
+            "Archived filter must be false, true, or all."
+        )
 
     escaped_query = (
         normalized_query
@@ -130,24 +133,43 @@ def search_document_conversations(
     else:
         search_condition = title_condition
 
-    statement = (
-        select(DocumentConversation)
-        .where(
-            DocumentConversation.organization_id
-            == organization_id,
-            search_condition,
-        )
-        .order_by(
+    statement = select(DocumentConversation).where(
+        DocumentConversation.organization_id == organization_id,
+        search_condition,
+    )
+
+    if archive_filter == "false":
+        statement = statement.where(
+            DocumentConversation.is_archived.is_(False)
+        ).order_by(
             DocumentConversation.is_pinned.desc(),
             DocumentConversation.pinned_at.desc(),
             DocumentConversation.updated_at.desc(),
             DocumentConversation.created_at.desc(),
             DocumentConversation.id.desc(),
         )
-        .offset(offset)
-        .limit(limit)
-    )
 
-    return list(
-        db.scalars(statement).all()
-    )
+    elif archive_filter == "true":
+        statement = statement.where(
+            DocumentConversation.is_archived.is_(True)
+        ).order_by(
+            DocumentConversation.archived_at.desc(),
+            DocumentConversation.updated_at.desc(),
+            DocumentConversation.created_at.desc(),
+            DocumentConversation.id.desc(),
+        )
+
+    else:
+        statement = statement.order_by(
+            DocumentConversation.is_archived.asc(),
+            DocumentConversation.is_pinned.desc(),
+            DocumentConversation.pinned_at.desc(),
+            DocumentConversation.archived_at.desc(),
+            DocumentConversation.updated_at.desc(),
+            DocumentConversation.created_at.desc(),
+            DocumentConversation.id.desc(),
+        )
+
+    statement = statement.offset(offset).limit(limit)
+
+    return list(db.scalars(statement).all())

@@ -338,9 +338,14 @@ def list_document_conversations(
     organization_id: str,
     limit: int = 50,
     offset: int = 0,
+    archived: str = "false",
 ) -> list[DocumentConversation]:
     """
-    Return conversations for one organisation with bounded pagination.
+    Return organisation-scoped conversations with archive filtering.
+
+    archived=false returns active conversations.
+    archived=true returns archived conversations.
+    archived=all returns both active and archived conversations.
     """
 
     if limit < 1:
@@ -358,23 +363,53 @@ def list_document_conversations(
             "Conversation offset must not be negative."
         )
 
-    statement = (
-        select(DocumentConversation)
-        .where(
-            DocumentConversation.organization_id == organization_id
+    archive_filter = archived.strip().lower()
+
+    if archive_filter not in {"false", "true", "all"}:
+        raise ConversationValidationError(
+            "Archived filter must be false, true, or all."
         )
-        .order_by(
+
+    statement = select(DocumentConversation).where(
+        DocumentConversation.organization_id == organization_id
+    )
+
+    if archive_filter == "false":
+        statement = statement.where(
+            DocumentConversation.is_archived.is_(False)
+        ).order_by(
             DocumentConversation.is_pinned.desc(),
             DocumentConversation.pinned_at.desc(),
             DocumentConversation.updated_at.desc(),
             DocumentConversation.created_at.desc(),
             DocumentConversation.id.desc(),
         )
-        .offset(offset)
-        .limit(limit)
-    )
+
+    elif archive_filter == "true":
+        statement = statement.where(
+            DocumentConversation.is_archived.is_(True)
+        ).order_by(
+            DocumentConversation.archived_at.desc(),
+            DocumentConversation.updated_at.desc(),
+            DocumentConversation.created_at.desc(),
+            DocumentConversation.id.desc(),
+        )
+
+    else:
+        statement = statement.order_by(
+            DocumentConversation.is_archived.asc(),
+            DocumentConversation.is_pinned.desc(),
+            DocumentConversation.pinned_at.desc(),
+            DocumentConversation.archived_at.desc(),
+            DocumentConversation.updated_at.desc(),
+            DocumentConversation.created_at.desc(),
+            DocumentConversation.id.desc(),
+        )
+
+    statement = statement.offset(offset).limit(limit)
 
     return list(db.scalars(statement).all())
+
 
 def update_document_conversation(
     db: Session,
@@ -495,6 +530,91 @@ def unpin_document_conversation(
 
         raise ConversationPersistenceError(
             "Unable to unpin the conversation."
+        ) from exc
+
+    return conversation
+
+
+def archive_document_conversation(
+    db: Session,
+    *,
+    organization_id: str,
+    conversation_id: str,
+) -> DocumentConversation:
+    """
+    Archive an organisation-scoped conversation.
+
+    Repeated archive operations are idempotent and preserve the original
+    archive timestamp.
+    """
+
+    conversation = get_document_conversation(
+        db,
+        organization_id=organization_id,
+        conversation_id=conversation_id,
+    )
+
+    if conversation.is_archived:
+        return conversation
+
+    try:
+        now = _utc_now()
+
+        conversation.is_archived = True
+        conversation.archived_at = now
+        conversation.updated_at = now
+
+        db.add(conversation)
+        db.commit()
+        db.refresh(conversation)
+
+    except SQLAlchemyError as exc:
+        db.rollback()
+
+        raise ConversationPersistenceError(
+            "Unable to archive the conversation."
+        ) from exc
+
+    return conversation
+
+
+def unarchive_document_conversation(
+    db: Session,
+    *,
+    organization_id: str,
+    conversation_id: str,
+) -> DocumentConversation:
+    """
+    Restore an archived organisation-scoped conversation.
+
+    Repeated unarchive operations are idempotent.
+    """
+
+    conversation = get_document_conversation(
+        db,
+        organization_id=organization_id,
+        conversation_id=conversation_id,
+    )
+
+    if not conversation.is_archived:
+        return conversation
+
+    try:
+        now = _utc_now()
+
+        conversation.is_archived = False
+        conversation.archived_at = None
+        conversation.updated_at = now
+
+        db.add(conversation)
+        db.commit()
+        db.refresh(conversation)
+
+    except SQLAlchemyError as exc:
+        db.rollback()
+
+        raise ConversationPersistenceError(
+            "Unable to unarchive the conversation."
         ) from exc
 
     return conversation
