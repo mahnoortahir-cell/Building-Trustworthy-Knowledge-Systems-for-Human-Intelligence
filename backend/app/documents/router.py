@@ -94,6 +94,7 @@ from app.documents.conversation_service import (
     ConversationPersistenceError,
     ConversationValidationError,
     add_conversation_message,
+    archive_document_conversation,
     create_document_conversation,
     delete_document_conversation,
     get_conversation_history,
@@ -102,6 +103,7 @@ from app.documents.conversation_service import (
     list_document_conversations,
     update_document_conversation,
     pin_document_conversation,
+    unarchive_document_conversation,
     unpin_document_conversation,
 )
 
@@ -494,6 +496,7 @@ def get_conversations(
     ],
     limit: int = 50,
     offset: int = 0,
+    archived: str = "false",
 ) -> ConversationListResponse:
     try:
         conversations = list_document_conversations(
@@ -501,6 +504,7 @@ def get_conversations(
             organization_id=membership.organization_id,
             limit=limit,
             offset=offset,
+            archived=archived,
         )
     except ConversationValidationError as exc:
         raise HTTPException(
@@ -517,7 +521,6 @@ def get_conversations(
         conversations=results,
         count=len(results),
     )
-
 
 
 @router.get(
@@ -538,6 +541,7 @@ def search_conversations_endpoint(
     limit: int = 20,
     offset: int = 0,
     include_message_content: bool = False,
+    archived: str = "false",
 ) -> ConversationListResponse:
     """
     Search conversations in the authenticated organisation.
@@ -554,6 +558,7 @@ def search_conversations_endpoint(
             limit=limit,
             offset=offset,
             include_message_content=include_message_content,
+            archived=archived,
         )
 
     except ConversationValidationError as exc:
@@ -571,7 +576,6 @@ def search_conversations_endpoint(
         conversations=conversation_items,
         count=len(conversation_items),
     )
-
 
 
 @router.post(
@@ -688,6 +692,8 @@ def get_conversation(
         title=conversation.title,
         is_pinned=conversation.is_pinned,
         pinned_at=conversation.pinned_at,
+        is_archived=conversation.is_archived,
+        archived_at=conversation.archived_at,
         created_at=conversation.created_at,
         updated_at=conversation.updated_at,
         messages=[
@@ -786,6 +792,66 @@ def unpin_conversation(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ConversationPersistenceError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return ConversationResponse.model_validate(conversation)
+
+
+@router.post(
+    "/conversations/{conversation_id}/archive",
+    response_model=ConversationResponse,
+    status_code=status.HTTP_200_OK,
+)
+def archive_conversation(
+    conversation_id: str,
+    membership: Annotated[Membership, Depends(get_current_membership)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ConversationResponse:
+    try:
+        conversation = archive_document_conversation(
+            db,
+            organization_id=membership.organization_id,
+            conversation_id=conversation_id,
+        )
+    except ConversationNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except ConversationPersistenceError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+
+    return ConversationResponse.model_validate(conversation)
+
+
+@router.delete(
+    "/conversations/{conversation_id}/archive",
+    response_model=ConversationResponse,
+    status_code=status.HTTP_200_OK,
+)
+def unarchive_conversation(
+    conversation_id: str,
+    membership: Annotated[Membership, Depends(get_current_membership)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ConversationResponse:
+    try:
+        conversation = unarchive_document_conversation(
+            db,
+            organization_id=membership.organization_id,
+            conversation_id=conversation_id,
+        )
+    except ConversationNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except ConversationPersistenceError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+
     return ConversationResponse.model_validate(conversation)
 
 
