@@ -90,6 +90,7 @@ from app.documents.conversation_search_service import (
     search_document_conversations,
 )
 from app.documents.conversation_service import (
+    ConversationConflictError,
     ConversationNotFoundError,
     ConversationPersistenceError,
     ConversationValidationError,
@@ -97,12 +98,14 @@ from app.documents.conversation_service import (
     archive_document_conversation,
     create_document_conversation,
     delete_document_conversation,
+    permanently_delete_document_conversation,
     get_conversation_history,
     get_document_conversation,
     list_conversation_messages,
     list_document_conversations,
     update_document_conversation,
     pin_document_conversation,
+    restore_document_conversation,
     unarchive_document_conversation,
     unpin_document_conversation,
 )
@@ -497,6 +500,7 @@ def get_conversations(
     limit: int = 50,
     offset: int = 0,
     archived: str = "false",
+    deleted: str = "false",
 ) -> ConversationListResponse:
     try:
         conversations = list_document_conversations(
@@ -505,6 +509,7 @@ def get_conversations(
             limit=limit,
             offset=offset,
             archived=archived,
+            deleted=deleted,
         )
     except ConversationValidationError as exc:
         raise HTTPException(
@@ -542,6 +547,7 @@ def search_conversations_endpoint(
     offset: int = 0,
     include_message_content: bool = False,
     archived: str = "false",
+    deleted: str = "false",
 ) -> ConversationListResponse:
     """
     Search conversations in the authenticated organisation.
@@ -559,6 +565,7 @@ def search_conversations_endpoint(
             offset=offset,
             include_message_content=include_message_content,
             archived=archived,
+            deleted=deleted,
         )
 
     except ConversationValidationError as exc:
@@ -694,6 +701,8 @@ def get_conversation(
         pinned_at=conversation.pinned_at,
         is_archived=conversation.is_archived,
         archived_at=conversation.archived_at,
+        is_deleted=conversation.is_deleted,
+        deleted_at=conversation.deleted_at,
         created_at=conversation.created_at,
         updated_at=conversation.updated_at,
         messages=[
@@ -853,6 +862,87 @@ def unarchive_conversation(
         ) from exc
 
     return ConversationResponse.model_validate(conversation)
+
+
+@router.post(
+    "/conversations/{conversation_id}/restore",
+    response_model=ConversationResponse,
+    status_code=status.HTTP_200_OK,
+)
+def restore_conversation(
+    conversation_id: str,
+    membership: Annotated[
+        Membership,
+        Depends(get_current_membership),
+    ],
+    db: Annotated[
+        Session,
+        Depends(get_db),
+    ],
+) -> ConversationResponse:
+    try:
+        conversation = restore_document_conversation(
+            db,
+            organization_id=membership.organization_id,
+            conversation_id=conversation_id,
+        )
+
+    except ConversationNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+    except ConversationPersistenceError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+
+    return ConversationResponse.model_validate(conversation)
+
+
+@router.delete(
+    "/conversations/{conversation_id}/permanent",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def permanently_delete_conversation(
+    conversation_id: str,
+    membership: Annotated[
+        Membership,
+        Depends(get_current_membership),
+    ],
+    db: Annotated[
+        Session,
+        Depends(get_db),
+    ],
+) -> Response:
+    try:
+        permanently_delete_document_conversation(
+            db,
+            organization_id=membership.organization_id,
+            conversation_id=conversation_id,
+        )
+
+    except ConversationNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+    except ConversationConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+
+    except ConversationPersistenceError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.delete(

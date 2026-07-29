@@ -44,6 +44,8 @@ class ConversationResponse(BaseModel):
     pinned_at: datetime | None
     is_archived: bool
     archived_at: datetime | None
+    is_deleted: bool
+    deleted_at: datetime | None
     created_at: datetime
     updated_at: datetime
 

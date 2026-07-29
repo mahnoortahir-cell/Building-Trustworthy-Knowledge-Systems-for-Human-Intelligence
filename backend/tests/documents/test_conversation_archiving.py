@@ -1,4 +1,4 @@
-﻿from uuid import uuid4
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
@@ -574,7 +574,7 @@ def test_invalid_archive_filter_is_rejected(
     assert search_response.status_code == 422
 
 
-def test_archived_conversation_can_be_permanently_deleted(
+def test_archived_conversation_can_be_moved_to_trash(
     client: TestClient,
 ) -> None:
     registration = register_user(

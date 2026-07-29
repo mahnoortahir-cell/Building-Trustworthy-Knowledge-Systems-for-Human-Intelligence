@@ -1,4 +1,4 @@
-﻿from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.documents.conversation_service import (
@@ -69,6 +69,7 @@ def search_document_conversations(
     offset: int = 0,
     include_message_content: bool = False,
     archived: str = "false",
+    deleted: str = "false",
 ) -> list[DocumentConversation]:
     """
     Search conversations belonging to one organisation.
@@ -85,6 +86,14 @@ def search_document_conversations(
     )
 
     archive_filter = archived.strip().lower()
+
+
+    deleted_filter = deleted.strip().lower()
+
+    if deleted_filter not in {"false", "true", "all"}:
+        raise ConversationValidationError(
+            "Deleted filter must be false, true, or all."
+        )
 
     if archive_filter not in {"false", "true", "all"}:
         raise ConversationValidationError(
@@ -137,6 +146,18 @@ def search_document_conversations(
         DocumentConversation.organization_id == organization_id,
         search_condition,
     )
+
+
+    if deleted_filter == "false":
+        statement = statement.where(
+            DocumentConversation.is_deleted.is_(False)
+        )
+    elif deleted_filter == "true":
+        statement = statement.where(
+            DocumentConversation.is_deleted.is_(True)
+        ).order_by(
+            DocumentConversation.deleted_at.desc()
+        )
 
     if archive_filter == "false":
         statement = statement.where(
