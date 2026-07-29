@@ -1,0 +1,123 @@
+﻿:root {
+  font-family:
+    Inter, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  color: #17211d;
+  background: #f1f5f2;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.app-page {
+  display: grid;
+  min-height: 100vh;
+  padding: 24px;
+  place-items: center;
+  background:
+    radial-gradient(
+      circle at top left,
+      rgba(213, 168, 75, 0.24),
+      transparent 30%
+    ),
+    linear-gradient(135deg, #eef4f0, #f8f9f7);
+}
+
+.welcome-card {
+  width: min(620px, 100%);
+  padding: 52px;
+  border: 1px solid #dce5df;
+  border-radius: 24px;
+  background: #ffffff;
+  box-shadow: 0 24px 70px rgba(25, 61, 48, 0.12);
+  text-align: center;
+}
+
+.logo-mark {
+  display: grid;
+  width: 62px;
+  height: 62px;
+  margin: 0 auto 24px;
+  place-items: center;
+  border-radius: 18px;
+  color: #173e32;
+  background: linear-gradient(145deg, #f1d38e, #d5a84b);
+  font-size: 28px;
+  font-weight: 800;
+}
+
+.eyebrow {
+  margin-bottom: 12px;
+  color: #9a7227;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0 0 14px;
+  color: #153e32;
+  font-size: clamp(42px, 8vw, 68px);
+  letter-spacing: -0.06em;
+}
+
+.description {
+  max-width: 500px;
+  margin: 0 auto 30px;
+  color: #66736d;
+  line-height: 1.7;
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 15px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.status.success {
+  color: #246047;
+  background: #e7f4eb;
+}
+
+.status.success span {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #3c9f68;
+  box-shadow: 0 0 0 4px rgba(60, 159, 104, 0.14);
+}
+
+.status.loading {
+  color: #775c28;
+  background: #faf2df;
+}
+
+.status.error {
+  color: #92343c;
+  background: #fff0f1;
+}
+
+@media (max-width: 600px) {
+  .welcome-card {
+    padding: 36px 22px;
+  }
+}
