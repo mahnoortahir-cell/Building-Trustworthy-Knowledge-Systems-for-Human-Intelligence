@@ -112,3 +112,8 @@ The following flows have been verified locally:
 
 Build the document library, PDF upload interface, processing status and organisation-scoped document listing.
 <!-- AUTH_MILESTONE_END -->
+
+## Permanent Document Library
+
+The protected /documents page loads organisation documents from the backend database using TanStack React Query. It refreshes after upload and no longer stores document history in browser localStorage.
+

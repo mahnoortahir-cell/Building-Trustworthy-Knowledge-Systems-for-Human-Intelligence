@@ -13,6 +13,7 @@ from fastapi import (
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from fastapi import Query
 from app.core.database import get_db
 from app.documents.answer_streaming import (
     encode_sse,
@@ -36,7 +37,9 @@ from app.documents.retrieval_service import (
     RetrievalValidationError,
     search_document_chunks,
 )
+from app.documents.models import Document
 from app.documents.schemas import (
+    DocumentListResponse,
     DocumentResponse,
     DocumentVersionResponse,
 )
@@ -45,6 +48,7 @@ from app.documents.service import (
     DocumentStorageError,
     InvalidDocumentError,
     create_document_records,
+    list_documents,
     delete_stored_file,
     process_document_extraction,
     store_uploaded_file,
@@ -115,6 +119,81 @@ router = APIRouter(
     tags=["Documents"],
 )
 
+
+
+def _build_document_response(
+    document: Document,
+) -> DocumentResponse:
+    if not document.versions:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                "The document has no stored version."
+            ),
+        )
+
+    latest_version = document.versions[-1]
+
+    return DocumentResponse(
+        id=document.id,
+        organization_id=document.organization_id,
+        created_by_user_id=document.created_by_user_id,
+        title=document.title,
+        original_filename=document.original_filename,
+        content_type=document.content_type,
+        status=document.status.value,
+        created_at=document.created_at,
+        updated_at=document.updated_at,
+        latest_version=DocumentVersionResponse(
+            id=latest_version.id,
+            version_number=latest_version.version_number,
+            storage_path=latest_version.storage_path,
+            file_size=latest_version.file_size,
+            file_checksum=latest_version.file_checksum,
+            extraction_status=(
+                latest_version.extraction_status.value
+            ),
+            created_at=latest_version.created_at,
+        ),
+    )
+
+
+@router.get(
+    "",
+    response_model=DocumentListResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_documents(
+    membership: Annotated[
+        Membership,
+        Depends(get_current_membership),
+    ],
+    db: Annotated[Session, Depends(get_db)],
+    limit: Annotated[
+        int,
+        Query(ge=1, le=100),
+    ] = 20,
+    offset: Annotated[
+        int,
+        Query(ge=0),
+    ] = 0,
+) -> DocumentListResponse:
+    documents, total = list_documents(
+        db,
+        organization_id=membership.organization_id,
+        limit=limit,
+        offset=offset,
+    )
+
+    return DocumentListResponse(
+        items=[
+            _build_document_response(document)
+            for document in documents
+        ],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 @router.post(
     "",

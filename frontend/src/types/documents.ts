@@ -37,6 +37,13 @@ export interface DocumentRecord {
   latest_version: DocumentVersion
 }
 
+export interface DocumentListResponse {
+  items: DocumentRecord[]
+  total: number
+  limit: number
+  offset: number
+}
+
 export interface RetrievedChunk {
   chunk_id: string
   document_id: string

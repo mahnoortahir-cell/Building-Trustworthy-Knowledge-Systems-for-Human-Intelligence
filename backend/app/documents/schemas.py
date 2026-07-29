@@ -28,3 +28,10 @@ class DocumentResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     latest_version: DocumentVersionResponse
+
+class DocumentListResponse(BaseModel):
+    items: list[DocumentResponse]
+    total: int
+    limit: int
+    offset: int
+
