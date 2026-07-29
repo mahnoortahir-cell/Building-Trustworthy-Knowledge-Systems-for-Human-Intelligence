@@ -6,6 +6,7 @@
 
 import { ProtectedRoute } from "./components/ProtectedRoute"
 import { DashboardPage } from "./pages/DashboardPage"
+import { DocumentsPage } from "./pages/DocumentsPage"
 import { LoginPage } from "./pages/LoginPage"
 import { RegisterPage } from "./pages/RegisterPage"
 
@@ -27,6 +28,11 @@ export default function App() {
           <Route
             path="/"
             element={<DashboardPage />}
+          />
+
+          <Route
+            path="/documents"
+            element={<DocumentsPage />}
           />
         </Route>
       </Routes>
