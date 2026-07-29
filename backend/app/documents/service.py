@@ -3,9 +3,9 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import UploadFile
-from sqlalchemy import delete
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
 from app.documents.chunking import chunk_text
@@ -196,6 +196,43 @@ def create_document_records(
         raise
 
     return document, version
+
+
+def list_documents(
+    db: Session,
+    *,
+    organization_id: str,
+    limit: int,
+    offset: int,
+) -> tuple[list[Document], int]:
+    # Return one organisation's documents newest first.
+
+    total = db.scalar(
+        select(func.count(Document.id)).where(
+            Document.organization_id == organization_id
+        )
+    )
+
+    documents = (
+        db.scalars(
+            select(Document)
+            .options(selectinload(Document.versions))
+            .where(
+                Document.organization_id
+                == organization_id
+            )
+            .order_by(
+                Document.created_at.desc(),
+                Document.id.desc(),
+            )
+            .offset(offset)
+            .limit(limit)
+        )
+        .unique()
+        .all()
+    )
+
+    return list(documents), int(total or 0)
 
 def delete_stored_file(storage_path: str) -> None:
     """Delete a stored file when database creation fails."""

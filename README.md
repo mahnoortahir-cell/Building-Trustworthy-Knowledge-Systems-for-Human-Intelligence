@@ -34,3 +34,8 @@ Validation completed:
 
 The next frontend milestone is the organisation document library and PDF upload workflow.
 <!-- FRONTEND_AUTH_STATUS_END -->
+
+## Database-Backed Document Library
+
+NoorOS now includes a permanent organisation-scoped document library with PDF upload, PostgreSQL listing, newest-first ordering, pagination, automatic frontend refresh, and semantic-search filtering.
+

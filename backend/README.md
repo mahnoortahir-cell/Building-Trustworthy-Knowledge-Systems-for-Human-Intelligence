@@ -84,3 +84,10 @@ During development, Vite proxies `/api/*` to `http://127.0.0.1:8000/*`. The fron
 - Rate limiting, security headers, and production CORS
 - Object storage, monitoring, CI/CD, deployment hardening
 - Load and performance testing
+
+## Document Library API
+
+GET /organizations/{organization_id}/documents?limit=20&offset=0
+
+Requires organisation membership and returns newest-first documents with total, limit, offset, and latest-version information. Validation: 293 backend tests passed.
+

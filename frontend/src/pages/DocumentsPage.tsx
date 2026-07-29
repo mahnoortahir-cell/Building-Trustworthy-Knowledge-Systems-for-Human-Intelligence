@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import {
   ArrowLeft,
   FileSearch,
@@ -6,6 +6,7 @@ import {
   Search,
   UploadCloud,
 } from "lucide-react"
+import { useQuery } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
 
 import { apiRequest } from "../api/client"
@@ -15,6 +16,7 @@ import {
   type OrganizationSummary,
 } from "../auth/authStore"
 import type {
+  DocumentListResponse,
   DocumentRecord,
   SemanticSearchResponse,
 } from "../types/documents"
@@ -56,39 +58,8 @@ function formatDate(value: string): string {
   }).format(date)
 }
 
-function readRecentDocuments(
-  organizationId: string,
-): DocumentRecord[] {
-  try {
-    const rawValue = localStorage.getItem(
-      `nooros-recent-documents:${organizationId}`,
-    )
-
-    if (!rawValue) {
-      return []
-    }
-
-    const parsedValue = JSON.parse(rawValue)
-
-    return Array.isArray(parsedValue)
-      ? (parsedValue as DocumentRecord[])
-      : []
-  } catch {
-    return []
-  }
-}
-
-function saveRecentDocuments(
-  organizationId: string,
-  documents: DocumentRecord[],
-) {
-  localStorage.setItem(
-    `nooros-recent-documents:${organizationId}`,
-    JSON.stringify(documents.slice(0, 20)),
-  )
-}
-
 const EMPTY_ORGANIZATIONS: OrganizationSummary[] = []
+const EMPTY_DOCUMENTS: DocumentRecord[] = []
 
 export function DocumentsPage() {
   const token = useAuthStore((state) => state.token)
@@ -109,13 +80,6 @@ export function DocumentsPage() {
   const [uploadError, setUploadError] = useState("")
   const [uploadedDocument, setUploadedDocument] =
     useState<DocumentRecord | null>(null)
-  const [recentDocuments, setRecentDocuments] = useState<
-    DocumentRecord[]
-  >(() =>
-    initialOrganizationId
-      ? readRecentDocuments(initialOrganizationId)
-      : [],
-  )
   const [query, setQuery] = useState("")
   const [documentFilterId, setDocumentFilterId] =
     useState("")
@@ -142,9 +106,6 @@ export function DocumentsPage() {
 
           setSelectedOrganizationId(organizationId)
 
-          setRecentDocuments(
-            readRecentDocuments(organizationId),
-          )
         }
       })
       .catch(() => {
@@ -163,6 +124,24 @@ export function DocumentsPage() {
       ) ?? null,
     [organizations, selectedOrganizationId],
   )
+
+
+  const documentLibraryQuery = useQuery({
+    queryKey: [
+      "documents",
+      selectedOrganizationId,
+    ],
+    queryFn: () =>
+      apiRequest<DocumentListResponse>(
+        `/organizations/${encodeURIComponent(
+          selectedOrganizationId,
+        )}/documents?limit=100&offset=0`,
+      ),
+    enabled: Boolean(selectedOrganizationId),
+  })
+
+  const recentDocuments =
+    documentLibraryQuery.data?.items ?? EMPTY_DOCUMENTS
 
   async function handleUpload(
     event: React.FormEvent<HTMLFormElement>,
@@ -208,18 +187,7 @@ export function DocumentsPage() {
 
       setUploadedDocument(uploadedResponse)
 
-      const updatedRecentDocuments = [
-        uploadedResponse,
-        ...recentDocuments.filter(
-          (item) => item.id !== uploadedResponse.id,
-        ),
-      ].slice(0, 20)
-
-      setRecentDocuments(updatedRecentDocuments)
-      saveRecentDocuments(
-        selectedOrganizationId,
-        updatedRecentDocuments,
-      )
+      await documentLibraryQuery.refetch()
 
       setTitle("")
       setSelectedFile(null)
@@ -324,13 +292,6 @@ export function DocumentsPage() {
                 organizationId,
               )
 
-              setRecentDocuments(
-                organizationId
-                  ? readRecentDocuments(
-                      organizationId,
-                    )
-                  : [],
-              )
 
               setDocumentFilterId("")
               setSearchResponse(null)
@@ -490,7 +451,7 @@ export function DocumentsPage() {
             </label>
 
             <label>
-              Limit to a recent upload
+              Limit to a document
               <select
                 value={documentFilterId}
                 onChange={(event) =>
@@ -539,7 +500,7 @@ export function DocumentsPage() {
       <section className="library-card">
         <div className="library-heading">
           <div>
-            <p className="eyebrow">Recent uploads</p>
+            <p className="eyebrow">Document library</p>
             <h2>
               {selectedOrganization?.name ??
                 "Organisation"}{" "}
@@ -548,7 +509,7 @@ export function DocumentsPage() {
           </div>
 
           <span className="count-pill">
-            {recentDocuments.length} saved locally
+            {documentLibraryQuery.data?.total ?? 0} documents
           </span>
         </div>
 
@@ -563,9 +524,9 @@ export function DocumentsPage() {
         {recentDocuments.length === 0 ? (
           <div className="empty-library">
             <FileSearch size={31} />
-            <strong>No recent uploads</strong>
+            <strong>No documents yet</strong>
             <span>
-              Upload a PDF to add it to this browser view.
+              Upload a PDF to add it to this organisation.
             </span>
           </div>
         ) : (
