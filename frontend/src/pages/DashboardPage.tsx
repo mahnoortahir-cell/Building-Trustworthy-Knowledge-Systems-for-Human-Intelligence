@@ -1,5 +1,9 @@
 ﻿import { useEffect, useState } from "react"
-import { useNavigate } from "react-router-dom"
+import { FileText } from "lucide-react"
+import {
+  Link,
+  useNavigate,
+} from "react-router-dom"
 
 import { apiRequest } from "../api/client"
 import {
@@ -53,6 +57,9 @@ export function DashboardPage() {
     storedUser?.email ||
     "NoorOS User"
 
+  const primaryOrganization =
+    storedUser?.organizations?.[0]
+
   return (
     <main className="dashboard-page">
       <header className="dashboard-header">
@@ -75,7 +82,7 @@ export function DashboardPage() {
       </header>
 
       {errorMessage ? (
-        <div className="form-error">
+        <div className="form-error dashboard-message">
           {errorMessage}
         </div>
       ) : null}
@@ -90,11 +97,19 @@ export function DashboardPage() {
           </span>
         </article>
 
-        <article>
+        <article className="dashboard-action-card">
           <strong>Documents</strong>
           <span>
-            PDF library and upload integration comes next.
+            Upload trusted PDFs and search extracted knowledge.
           </span>
+
+          <Link
+            className="dashboard-card-link"
+            to="/documents"
+          >
+            <FileText size={17} />
+            Open document library
+          </Link>
         </article>
 
         <article>
@@ -124,14 +139,15 @@ export function DashboardPage() {
 
           <div>
             <dt>Role</dt>
-            <dd>{storedUser?.role || "Member"}</dd>
+            <dd>
+              {primaryOrganization?.role || "Member"}
+            </dd>
           </div>
 
           <div>
             <dt>Organisation</dt>
             <dd>
-              {storedUser?.organization_name ||
-                storedUser?.organization_id ||
+              {primaryOrganization?.name ||
                 "Organisation-scoped"}
             </dd>
           </div>
