@@ -73,3 +73,42 @@ export default defineConfig([
 ])
 
 ```
+
+<!-- AUTH_MILESTONE_START -->
+## Authentication Milestone
+
+The authentication milestone is implemented and connected to the FastAPI backend.
+
+### Implemented
+
+- `/login` page
+- `/register` page
+- Protected `/` dashboard route
+- JWT-aware API client
+- Persistent session storage using Zustand
+- Current-user refresh using `/auth/me`
+- Logout and browser-session clearing
+- Redirect handling for protected pages
+- Responsive login, registration and dashboard screens
+
+### Backend Endpoints Used
+
+- `POST /auth/register`
+- `POST /auth/login`
+- `GET /auth/me`
+
+### Manual Validation
+
+The following flows have been verified locally:
+
+1. Register a new organisation workspace.
+2. Receive or obtain an access token.
+3. Load the authenticated user.
+4. Open the protected dashboard.
+5. Log out.
+6. Sign in again using the login page.
+
+### Next Milestone
+
+Build the document library, PDF upload interface, processing status and organisation-scoped document listing.
+<!-- AUTH_MILESTONE_END -->
